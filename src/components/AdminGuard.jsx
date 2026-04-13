@@ -7,11 +7,28 @@ export default function AdminGuard() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) navigate('/admin/login');
+    const validateSession = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (!session || error) {
+        navigate('/admin/login');
+        setChecking(false);
+        return;
+      }
+
+      // Refresh session to validate token is still valid on Supabase
+      const { data, error: refreshError } = await supabase.auth.refreshSession();
+      if (!data.session || refreshError) {
+        // Session is invalid or user was deleted
+        await supabase.auth.signOut();
+        navigate('/admin/login');
+      }
+      
       setChecking(false);
-    });
-  }, []);
+    };
+
+    validateSession();
+  }, [navigate]);
 
   if (checking) {
     return (

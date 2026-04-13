@@ -8,10 +8,28 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    const initAuth = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (!session || error) {
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // Validate the session is still valid on Supabase
+      const { data, error: refreshError } = await supabase.auth.refreshSession();
+      if (data.session && !refreshError) {
+        setUser(data.session.user ?? null);
+      } else {
+        // Session invalid, clear it
+        setUser(null);
+        await supabase.auth.signOut();
+      }
       setIsLoading(false);
-    });
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);

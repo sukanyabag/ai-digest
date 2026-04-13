@@ -22,6 +22,7 @@ export default function AdminEditor() {
     author: '', tags: '', content: '', cover_image: '', status: 'draft',
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(!!editId);
   const [preview, setPreview] = useState(false);
   const [splitView, setSplitView] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -29,24 +30,29 @@ export default function AdminEditor() {
   useEffect(() => {
     if (editId) {
       const load = async () => {
-        const { data } = await supabase.from('blog_posts').select('*').eq('id', editId).single();
-        if (data) {
-          setForm({
-            title: data.title || '',
-            slug: data.slug || '',
-            description: data.description || '',
-            category: data.category || '',
-            author: data.author || '',
-            tags: (data.tags || []).join(', '),
-            content: data.content || '',
-            cover_image: data.cover_image || '',
-            status: data.status || 'draft',
-          });
+        setLoading(true);
+        const { data, error } = await supabase.from('blog_posts').select('*').eq('id', editId).single();
+        if (!data || error) {
+          toast.error('Post not found or was deleted');
+          navigate('/admin');
+          return;
         }
+        setForm({
+          title: data.title || '',
+          slug: data.slug || '',
+          description: data.description || '',
+          category: data.category || '',
+          author: data.author || '',
+          tags: (data.tags || []).join(', '),
+          content: data.content || '',
+          cover_image: data.cover_image || '',
+          status: data.status || 'draft',
+        });
+        setLoading(false);
       };
       load();
     }
-  }, [editId]);
+  }, [editId, navigate]);
 
   const updateField = (field, value) => {
     setForm(prev => {
@@ -121,6 +127,14 @@ export default function AdminEditor() {
 
   const previewContent = getContentBody();
   const headings = extractHeadings(previewContent);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-6 h-6 border-2 border-border border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (preview) {
     return (
