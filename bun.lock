@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "base44-app",
+      "name": "ai-digest",
       "dependencies": {
         "@hello-pangea/dnd": "^17.0.0",
         "@hookform/resolvers": "^4.1.2",
