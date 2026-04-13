@@ -7,14 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { parseFrontmatter, extractHeadings, calculateReadingTime, generateSlug } from '../lib/markdown';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import TableOfContents from '../components/TableOfContents';
 
 export default function AdminEditor() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const urlParams = new URLSearchParams(window.location.search);
   const editId = urlParams.get('id');
 
@@ -86,8 +85,8 @@ export default function AdminEditor() {
   const getContentBody = () => parseFrontmatter(form.content).content;
 
   const handleSave = async () => {
-    if (!form.title.trim()) { toast({ title: 'Title is required', variant: 'destructive' }); return; }
-    if (!form.content.trim()) { toast({ title: 'Content is required', variant: 'destructive' }); return; }
+    if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!form.content.trim()) { toast.error('Content is required'); return; }
 
     setSaving(true);
     const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
@@ -115,7 +114,7 @@ export default function AdminEditor() {
       await supabase.from('blog_posts').insert(payload);
     }
 
-    toast({ title: editId ? 'Post updated!' : 'Post created!' });
+    toast.success(editId ? 'Post updated!' : 'Post created!');
     setSaving(false);
     navigate('/admin');
   };
@@ -145,7 +144,7 @@ export default function AdminEditor() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[85%] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-8">
         <button onClick={() => navigate('/admin')} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
@@ -220,16 +219,18 @@ export default function AdminEditor() {
               Insert frontmatter template
             </button>
           </div>
-          <div className={splitView ? 'grid grid-cols-2 gap-4' : ''}>
+          <div className={splitView ? 'grid grid-cols-2 gap-4 items-start' : ''}>
             <Textarea
               id="content"
               value={form.content}
               onChange={e => updateField('content', e.target.value)}
               placeholder={`---\ntitle: "Your title"\n---\n\n# Your content here...`}
-              className="font-mono text-sm min-h-[400px] resize-y"
+              className={splitView
+                ? 'font-mono text-sm h-[calc(100vh-16rem)] resize-none overflow-y-auto'
+                : 'font-mono text-sm min-h-[400px] resize-y'}
             />
             {splitView && (
-              <div className="min-h-[400px] border border-border rounded-xl p-4 overflow-y-auto bg-background">
+              <div className="h-[calc(100vh-16rem)] overflow-y-auto border border-border rounded-xl p-4 bg-background">
                 {previewContent ? <MarkdownRenderer content={previewContent} /> : <p className="text-muted-foreground text-sm">Start typing to see the preview...</p>}
               </div>
             )}

@@ -8,6 +8,7 @@ import MarkdownRenderer from '../components/MarkdownRenderer';
 import TableOfContents from '../components/TableOfContents';
 import SEOHead from '../components/SEOHead';
 import GoToTop from '../components/GoToTop';
+import Comments from '../components/Comments';
 
 export default function BlogPost() {
   const { slug } = useParams();
@@ -126,6 +127,7 @@ export default function BlogPost() {
               </div>
             )}
             <MarkdownRenderer content={markdownBody} />
+            <Comments postSlug={post.slug} />
           </div>
         </div>
       </div>

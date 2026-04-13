@@ -34,7 +34,7 @@ export default function TableOfContents({ headings, collapsible = false }) {
   };
 
   return (
-    <nav className="sticky top-24">
+    <nav className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
       <button
         onClick={() => collapsible && setOpen(v => !v)}
         className={`flex items-center gap-2 w-full mb-3 pb-3 border-b border-border/50 ${collapsible ? 'cursor-pointer' : 'cursor-default'}`}
