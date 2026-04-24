@@ -41,15 +41,15 @@ export default function Home() {
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary text-sm text-muted-foreground mb-6">
               <Sparkles className="w-3.5 h-3.5" />
-              Fresh perspectives, delivered weekly
+              AI from Research to Production
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
-              <span className="text-foreground">Stories that shape</span>
+              <span className="text-foreground">Where AI Engineering</span>
               <br />
-              <span className="bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent">how we think.</span>
+              <span className="bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent">meets Product Thinking.</span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-xl mb-8">
-              A curated collection of articles exploring technology, design, and the art of building meaningful things.
+              A curated collection of essays on Applied / Generative AI, Agents, Evaluation, and Production Design.
             </p>
             <Link
               to="/blog"

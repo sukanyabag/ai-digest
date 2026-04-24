@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 export default function SEOHead({ title, description, author, tags, url, image, type = 'article' }) {
   useEffect(() => {
-    document.title = title ? `${title} | AIDigest` : 'AIDigest';
+    document.title = title ? `${title} | The AI Brief` : 'The AI Brief';
 
     const setMeta = (name, content) => {
       if (!content) return;

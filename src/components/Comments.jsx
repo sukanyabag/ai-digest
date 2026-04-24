@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 // ─── Anonymous fingerprint (persisted per browser) ───────────────────────────
 function getFingerprint() {
-  const KEY = 'aidigest-fp';
+  const KEY = 'theaibrief-fp';
   let fp = localStorage.getItem(KEY);
   if (!fp) {
     fp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;

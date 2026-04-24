@@ -14,7 +14,7 @@ export default function Navbar({ isAdmin }) {
             <Feather className="w-4.5 h-4.5 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
-            AIDigest
+            The AI Brief
           </span>
         </Link>
 

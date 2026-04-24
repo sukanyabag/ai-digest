@@ -34,7 +34,7 @@ export default function AdminLogin() {
             <Feather className="w-5 h-5 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Admin Login</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to manage AIDigest</p>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to manage The AI Brief</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">

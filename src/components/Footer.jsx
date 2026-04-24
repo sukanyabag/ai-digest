@@ -9,7 +9,7 @@ export default function Footer() {
           <div className="flex items-center gap-2">
             <Feather className="w-4 h-4 text-primary" />
             <span className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} AIDigest. All rights reserved.
+              © {new Date().getFullYear()} The AI Brief. All rights reserved.
             </span>
           </div>
           <div className="flex items-center gap-6">
