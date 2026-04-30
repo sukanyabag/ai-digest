@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
+
+const ListDepthCtx = createContext(0);
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -9,7 +12,7 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import mermaid from 'mermaid';
 import {
   Info, Flame, AlertTriangle, Zap, Pencil, CheckCircle2,
-  HelpCircle, Bug, List, Quote, FileText, Star, BookOpen, Lightbulb,
+  HelpCircle, Bug, List, Quote, FileText, Star, BookOpen, Lightbulb, X,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -103,9 +106,51 @@ function useIsDark() {
 }
 
 // ---------------------------------------------------------------------------
+// Lightbox overlay for enlarged images / diagrams
+// ---------------------------------------------------------------------------
+function Lightbox({ open, onClose, children, caption }) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handler);
+      document.body.style.overflow = '';
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 z-10 p-2 rounded-full bg-background/20 hover:bg-background/40 text-white transition-colors"
+      >
+        <X className="w-5 h-5" />
+      </button>
+      <div
+        className="relative max-w-[94vw] max-h-[92vh] flex flex-col items-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+        {caption && (
+          <p className="mt-3 text-center text-sm text-white/80 italic max-w-2xl">{caption}</p>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Mermaid diagram component
 // ---------------------------------------------------------------------------
-function MermaidDiagram({ chart, isDark }) {
+function MermaidDiagram({ chart, isDark, onClick }) {
   const containerRef = useRef(null);
   const renderCount = useRef(0);
 
@@ -129,128 +174,218 @@ function MermaidDiagram({ chart, isDark }) {
       });
   }, [chart, isDark]);
 
-  return <div ref={containerRef} className="my-6 overflow-x-auto flex justify-center" />;
+  return (
+    <div
+      ref={containerRef}
+      onClick={onClick}
+      className="my-6 overflow-x-auto flex justify-center cursor-pointer hover:opacity-80 transition-opacity"
+      title="Click to enlarge"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Enlarged mermaid inside lightbox — re-renders at full viewport size
+// ---------------------------------------------------------------------------
+function MermaidLightboxContent({ chart, isDark }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const id = `mermaid-lb-${Date.now()}`;
+    mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
+    mermaid
+      .render(id, chart)
+      .then(({ svg }) => { if (containerRef.current) containerRef.current.innerHTML = svg; })
+      .catch(() => {
+        if (containerRef.current)
+          containerRef.current.innerHTML =
+            `<pre class="text-sm text-white/80 p-4">${chart}</pre>`;
+      });
+  }, [chart, isDark]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-[90vw] h-[85vh] overflow-auto bg-background rounded-xl p-6 shadow-2xl border border-border/50 flex items-center justify-center [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[80vh]"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Depth-aware list components
+// ---------------------------------------------------------------------------
+function MdUl({ children }) {
+  const depth = useContext(ListDepthCtx);
+  const cls = depth === 0
+    ? 'list-disc list-outside pl-6 mb-5 space-y-1.5 text-muted-foreground'
+    : 'list-[circle] list-outside pl-5 mt-1.5 mb-0 ml-4 space-y-1 text-muted-foreground';
+  return (
+    <ListDepthCtx.Provider value={depth + 1}>
+      <ul className={cls}>{children}</ul>
+    </ListDepthCtx.Provider>
+  );
+}
+
+function MdOl({ children }) {
+  const depth = useContext(ListDepthCtx);
+  const cls = depth === 0
+    ? 'list-decimal list-outside pl-6 mb-5 space-y-1.5 text-muted-foreground'
+    : 'list-decimal list-outside pl-5 mt-1.5 mb-0 ml-4 space-y-1 text-muted-foreground';
+  return (
+    <ListDepthCtx.Provider value={depth + 1}>
+      <ol className={cls}>{children}</ol>
+    </ListDepthCtx.Provider>
+  );
+}
+
+function MdLi({ children }) {
+  return <li className="leading-relaxed [&>p]:mb-0 [&>p]:inline">{children}</li>;
+}
+
+// ---------------------------------------------------------------------------
+// Stable plugin arrays (created once, never new references)
+// ---------------------------------------------------------------------------
+const REMARK_PLUGINS = [remarkCallouts, remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex];
+
+// ---------------------------------------------------------------------------
+// Pure markdown components (no closures — stable across renders)
+// ---------------------------------------------------------------------------
+function MdH1({ children }) {
+  const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+  return <h1 id={id} className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground mt-8 mb-4 scroll-mt-24">{children}</h1>;
+}
+function MdH2({ children }) {
+  const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+  return <h2 id={id} className="text-2xl font-bold tracking-tight text-foreground mt-12 mb-4 pb-2 border-b border-border/50 scroll-mt-24">{children}</h2>;
+}
+function MdH3({ children }) {
+  const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+  return <h3 id={id} className="text-xl font-semibold text-foreground mt-8 mb-3 scroll-mt-24">{children}</h3>;
+}
+function MdH4({ children }) { return <h4 className="text-lg font-semibold text-foreground mt-6 mb-2">{children}</h4>; }
+function MdP({ children }) { return <p className="text-muted-foreground leading-relaxed mb-5">{children}</p>; }
+function MdA({ href, children }) { return <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80 transition-opacity" target="_blank" rel="noopener noreferrer">{children}</a>; }
+function MdStrong({ children }) { return <strong className="font-semibold text-foreground">{children}</strong>; }
+function MdEm({ children }) { return <em className="italic text-muted-foreground">{children}</em>; }
+function MdPre({ children }) { return <>{children}</>; }
+function MdHr() { return <hr className="border-border/50 my-8" />; }
+function MdTable({ children }) { return <div className="overflow-x-auto my-6"><table className="w-full border border-border/50 rounded-lg overflow-hidden text-sm">{children}</table></div>; }
+function MdThead({ children }) { return <thead className="bg-secondary text-foreground font-semibold">{children}</thead>; }
+function MdTbody({ children }) { return <tbody className="text-muted-foreground">{children}</tbody>; }
+function MdTr({ children }) { return <tr className="border-b border-border/50">{children}</tr>; }
+function MdTh({ children }) { return <th className="px-4 py-2 text-left">{children}</th>; }
+function MdTd({ children }) { return <td className="px-4 py-2">{children}</td>; }
+
+function MdBlockquote({ node, children }) {
+  const calloutType = node?.properties?.['data-callout'];
+  if (!calloutType) {
+    return (
+      <blockquote className="border-l-4 border-primary/40 pl-4 py-2 my-6 bg-secondary/40 rounded-r-lg text-muted-foreground italic">
+        {children}
+      </blockquote>
+    );
+  }
+  const cfg = CALLOUTS[calloutType] ?? CALLOUTS.note;
+  const rawTitle = children[0]?.props?.children;
+  const titleContent = rawTitle
+    ? (Array.isArray(rawTitle) ? rawTitle : [rawTitle]).filter(Boolean)
+    : null;
+  const hasTitle = titleContent && titleContent.length > 0 &&
+    !(titleContent.length === 1 && titleContent[0] === '');
+  const body = children.slice(1);
+  return (
+    <div className={`my-6 rounded-xl border-l-4 ${cfg.border} ${cfg.bg} overflow-hidden`}>
+      <div className={`flex items-center gap-2 px-4 py-2.5 font-semibold text-sm ${cfg.title}`}>
+        {cfg.icon}
+        <span>{hasTitle ? titleContent : cfg.label}</span>
+      </div>
+      {body.length > 0 && (
+        <div className="px-4 pb-3 [&>p]:text-muted-foreground [&>p]:mb-2 [&>p:last-child]:mb-0 [&>p]:leading-relaxed [&>p]:text-sm">
+          {body}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Main renderer
 // ---------------------------------------------------------------------------
-export default function MarkdownRenderer({ content }) {
+export default React.memo(function MarkdownRenderer({ content }) {
   const isDark = useIsDark();
+  const [lightbox, setLightbox] = useState(null);
+  const closeLightbox = useCallback(() => setLightbox(null), []);
+
+  const components = useMemo(() => ({
+    h1: MdH1, h2: MdH2, h3: MdH3, h4: MdH4,
+    p: MdP, a: MdA, strong: MdStrong, em: MdEm,
+    pre: MdPre, hr: MdHr,
+    ul: MdUl, ol: MdOl, li: MdLi,
+    blockquote: MdBlockquote,
+    table: MdTable, thead: MdThead, tbody: MdTbody, tr: MdTr, th: MdTh, td: MdTd,
+    code({ className, children }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const lang = match ? match[1] : '';
+      if (!className) {
+        return <code className="text-sm bg-secondary text-foreground px-1.5 py-0.5 rounded font-mono before:content-none after:content-none">{children}</code>;
+      }
+      if (lang === 'mermaid') {
+        const chart = String(children).trim();
+        return <MermaidDiagram chart={chart} isDark={isDark} onClick={() => setLightbox({ type: 'mermaid', chart })} />;
+      }
+      return (
+        <SyntaxHighlighter language={lang || 'text'} style={isDark ? vscDarkPlus : vs}
+          customStyle={{ borderRadius: '0.75rem', margin: '1.5rem 0', fontSize: '0.875rem', border: '1px solid hsl(var(--border) / 0.5)' }}
+          codeTagProps={{ style: {} }}>
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      );
+    },
+    img({ src, alt }) {
+      let caption = alt || '';
+      const sizeStyle = {};
+      const sizeMatch = /^(.*?)\|\|(\d+)(?:x(\d+))?$/.exec(caption);
+      if (sizeMatch) {
+        caption = sizeMatch[1].trim();
+        sizeStyle.width = sizeMatch[2] + 'px';
+        if (sizeMatch[3]) sizeStyle.height = sizeMatch[3] + 'px';
+      }
+      const hasCaption = caption && caption !== 'image';
+      const sized = Object.keys(sizeStyle).length > 0;
+      const imgCls = sized
+        ? 'rounded-xl shadow-md border border-border/50 cursor-pointer hover:opacity-90 transition-opacity object-contain'
+        : 'rounded-xl shadow-md w-full border border-border/50 cursor-pointer hover:opacity-90 transition-opacity';
+      const openImage = () => setLightbox({ type: 'image', src, caption: hasCaption ? caption : null });
+      if (hasCaption) {
+        return (
+          <figure className={`my-6${sized ? ' flex flex-col items-center' : ''}`}>
+            <img src={src} alt={caption} onClick={openImage} style={sizeStyle} className={imgCls} title="Click to enlarge" />
+            <figcaption className="text-center text-sm text-muted-foreground mt-2 italic">{caption}</figcaption>
+          </figure>
+        );
+      }
+      if (sized) {
+        return <div className="my-6 flex justify-center"><img src={src} alt="" onClick={openImage} style={sizeStyle} className={imgCls} title="Click to enlarge" /></div>;
+      }
+      return <img src={src} alt="" onClick={openImage} className={`${imgCls} my-6`} title="Click to enlarge" />;
+    },
+  }), [isDark]);
 
   return (
     <div className="markdown-body text-foreground">
-      <ReactMarkdown
-        remarkPlugins={[remarkCallouts, remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          h1: ({ children }) => {
-            const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
-            return <h1 id={id} className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground mt-8 mb-4 scroll-mt-24">{children}</h1>;
-          },
-          h2: ({ children }) => {
-            const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
-            return <h2 id={id} className="text-2xl font-bold tracking-tight text-foreground mt-12 mb-4 pb-2 border-b border-border/50 scroll-mt-24">{children}</h2>;
-          },
-          h3: ({ children }) => {
-            const id = String(children).toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
-            return <h3 id={id} className="text-xl font-semibold text-foreground mt-8 mb-3 scroll-mt-24">{children}</h3>;
-          },
-          h4: ({ children }) => <h4 className="text-lg font-semibold text-foreground mt-6 mb-2">{children}</h4>,
-          p: ({ children }) => <p className="text-muted-foreground leading-relaxed mb-5">{children}</p>,
-          a: ({ href, children }) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80 transition-opacity" target="_blank" rel="noopener noreferrer">{children}</a>,
-          strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-          em: ({ children }) => <em className="italic text-muted-foreground">{children}</em>,
-          pre: ({ children }) => <>{children}</>,
-          code({ className, children }) {
-            const match = /language-(\w+)/.exec(className || '');
-            const lang = match ? match[1] : '';
-            if (!className) {
-              return (
-                <code className="text-sm bg-secondary text-foreground px-1.5 py-0.5 rounded font-mono before:content-none after:content-none">
-                  {children}
-                </code>
-              );
-            }
-            if (lang === 'mermaid') {
-              return <MermaidDiagram chart={String(children).trim()} isDark={isDark} />;
-            }
-            return (
-              <SyntaxHighlighter
-                language={lang || 'text'}
-                style={isDark ? vscDarkPlus : vs}
-                customStyle={{
-                  borderRadius: '0.75rem',
-                  margin: '1.5rem 0',
-                  fontSize: '0.875rem',
-                  border: '1px solid hsl(var(--border) / 0.5)',
-                }}
-                codeTagProps={{ style: {} }}
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            );
-          },
-          blockquote({ node, children }) {
-            const calloutType = node?.properties?.['data-callout'];
-
-            // Plain blockquote — no [!type] detected
-            if (!calloutType) {
-              return (
-                <blockquote className="border-l-4 border-primary/40 pl-4 py-2 my-6 bg-secondary/40 rounded-r-lg text-muted-foreground italic">
-                  {children}
-                </blockquote>
-              );
-            }
-
-            const cfg = CALLOUTS[calloutType] ?? CALLOUTS.note;
-
-            // children[0] is the first <p> rendered by our `p` component.
-            // Its props.children hold the title content (already stripped of [!type]).
-            const rawTitle = children[0]?.props?.children;
-            const titleContent = rawTitle
-              ? (Array.isArray(rawTitle) ? rawTitle : [rawTitle]).filter(Boolean)
-              : null;
-            const hasTitle = titleContent && titleContent.length > 0 &&
-              !(titleContent.length === 1 && titleContent[0] === '');
-
-            const body = children.slice(1);
-
-            return (
-              <div className={`my-6 rounded-xl border-l-4 ${cfg.border} ${cfg.bg} overflow-hidden`}>
-                {/* Callout header */}
-                <div className={`flex items-center gap-2 px-4 py-2.5 font-semibold text-sm ${cfg.title}`}>
-                  {cfg.icon}
-                  <span>{hasTitle ? titleContent : cfg.label}</span>
-                </div>
-                {/* Callout body */}
-                {body.length > 0 && (
-                  <div className="px-4 pb-3 [&>p]:text-muted-foreground [&>p]:mb-2 [&>p:last-child]:mb-0 [&>p]:leading-relaxed [&>p]:text-sm">
-                    {body}
-                  </div>
-                )}
-              </div>
-            );
-          },
-          ul: ({ children }) => <ul className="list-disc list-inside mb-5 space-y-1.5 text-muted-foreground">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal list-inside mb-5 space-y-1.5 text-muted-foreground">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-          hr: () => <hr className="border-border/50 my-8" />,
-          img: ({ src, alt }) => <img src={src} alt={alt} className="rounded-xl shadow-md my-6 w-full border border-border/50" />,
-          table: ({ children }) => (
-            <div className="overflow-x-auto my-6">
-              <table className="w-full border border-border/50 rounded-lg overflow-hidden text-sm">{children}</table>
-            </div>
-          ),
-          thead: ({ children }) => <thead className="bg-secondary text-foreground font-semibold">{children}</thead>,
-          tbody: ({ children }) => <tbody className="text-muted-foreground">{children}</tbody>,
-          tr: ({ children }) => <tr className="border-b border-border/50">{children}</tr>,
-          th: ({ children }) => <th className="px-4 py-2 text-left">{children}</th>,
-          td: ({ children }) => <td className="px-4 py-2">{children}</td>,
-        }}
-      >
+      <Lightbox open={!!lightbox} onClose={closeLightbox} caption={lightbox?.caption}>
+        {lightbox?.type === 'image' && (
+          <img src={lightbox.src} alt={lightbox.caption || ''} className="max-w-[85vw] max-h-[85vh] object-contain rounded-xl shadow-2xl" />
+        )}
+        {lightbox?.type === 'mermaid' && (
+          <MermaidLightboxContent chart={lightbox.chart} isDark={isDark} />
+        )}
+      </Lightbox>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
         {content}
       </ReactMarkdown>
     </div>
   );
-}
+});

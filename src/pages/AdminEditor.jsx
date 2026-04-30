@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, Save, Eye, Upload } from 'lucide-react';
+import { ArrowLeft, Save, Eye, Upload, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,10 @@ import { toast } from 'sonner';
 import { parseFrontmatter, extractHeadings, calculateReadingTime, generateSlug } from '../lib/markdown';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import TableOfContents from '../components/TableOfContents';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 export default function AdminEditor() {
   const navigate = useNavigate();
@@ -26,6 +30,19 @@ export default function AdminEditor() {
   const [preview, setPreview] = useState(false);
   const [splitView, setSplitView] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [inlineUploading, setInlineUploading] = useState(false);
+  const [initialForm, setInitialForm] = useState(null);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
+  const contentRef = useRef(null);
+  const inlineFileRef = useRef(null);
+  const skipGuardRef = useRef(false);
+  const sentinelRef = useRef(false);
+
+  const isDirty = useMemo(
+    () => initialForm !== null && JSON.stringify(form) !== JSON.stringify(initialForm),
+    [form, initialForm]
+  );
 
   useEffect(() => {
     if (editId) {
@@ -37,7 +54,7 @@ export default function AdminEditor() {
           navigate('/admin');
           return;
         }
-        setForm({
+        const loaded = {
           title: data.title || '',
           slug: data.slug || '',
           description: data.description || '',
@@ -47,10 +64,14 @@ export default function AdminEditor() {
           content: data.content || '',
           cover_image: data.cover_image || '',
           status: data.status || 'draft',
-        });
+        };
+        setForm(loaded);
+        setInitialForm(loaded);
         setLoading(false);
       };
       load();
+    } else {
+      setInitialForm({ ...form });
     }
   }, [editId, navigate]);
 
@@ -76,6 +97,171 @@ export default function AdminEditor() {
     setUploading(false);
   };
 
+  const uploadInlineImage = useCallback(async (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    setInlineUploading(true);
+    const ext = file.name?.split('.').pop() || 'png';
+    const path = `content/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { data, error } = await supabase.storage.from('blog-images').upload(path, file, { upsert: true });
+    if (error) {
+      toast.error('Image upload failed');
+      setInlineUploading(false);
+      return;
+    }
+    const { data: { publicUrl } } = supabase.storage.from('blog-images').getPublicUrl(data.path);
+    const textarea = contentRef.current;
+    const cursorPos = textarea?.selectionStart ?? form.content.length;
+    const imageTag = `\n![Enter caption](${publicUrl})\n`;
+    const before = form.content.slice(0, cursorPos);
+    const after = form.content.slice(cursorPos);
+    const newContent = before + imageTag + after;
+    updateField('content', newContent);
+    setInlineUploading(false);
+    toast.success('Image inserted');
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const captionStart = cursorPos + 3;
+        const captionEnd = captionStart + 'Enter caption'.length;
+        textarea.focus();
+        textarea.setSelectionRange(captionStart, captionEnd);
+      }
+    });
+  }, [form.content]);
+
+  const handleContentDrop = useCallback((e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      e.preventDefault();
+      uploadInlineImage(file);
+    }
+  }, [uploadInlineImage]);
+
+  const handleContentDragOver = useCallback((e) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault();
+    }
+  }, []);
+
+  const handleContentPaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) uploadInlineImage(file);
+        return;
+      }
+    }
+  }, [uploadInlineImage]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e) => {
+      if (skipGuardRef.current) return;
+      const anchor = e.target.closest('a[href]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto:')) return;
+      e.preventDefault();
+      setPendingNavigation({ type: 'link', path: href });
+      setShowLeaveDialog(true);
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [isDirty]);
+
+  useEffect(() => {
+    if (!isDirty) {
+      if (sentinelRef.current) {
+        sentinelRef.current = false;
+        window.history.back();
+      }
+      return;
+    }
+    if (!sentinelRef.current) {
+      window.history.pushState(null, '', window.location.href);
+      sentinelRef.current = true;
+    }
+    const handler = () => {
+      if (skipGuardRef.current) return;
+      window.history.pushState(null, '', window.location.href);
+      setPendingNavigation({ type: 'back' });
+      setShowLeaveDialog(true);
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, [isDirty]);
+
+  const attemptLeave = (path) => {
+    if (!isDirty) { navigate(path); return; }
+    setPendingNavigation({ type: 'link', path });
+    setShowLeaveDialog(true);
+  };
+
+  const savePost = async () => {
+    if (!form.title.trim()) { toast.error('Title is required'); return false; }
+    if (!form.content.trim()) { toast.error('Content is required'); return false; }
+    setSaving(true);
+    const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
+    const contentBody = getContentBody();
+    const readingTime = calculateReadingTime(contentBody);
+    const payload = {
+      title: form.title,
+      slug: form.slug || generateSlug(form.title),
+      description: form.description,
+      category: form.category,
+      author: form.author,
+      tags,
+      content: form.content,
+      cover_image: form.cover_image,
+      status: form.status,
+      reading_time: readingTime,
+    };
+    if (form.status === 'published') payload.published_date = new Date().toISOString();
+    if (editId) {
+      await supabase.from('blog_posts').update(payload).eq('id', editId);
+    } else {
+      await supabase.from('blog_posts').insert(payload);
+    }
+    toast.success(editId ? 'Post updated!' : 'Post created!');
+    setSaving(false);
+    return true;
+  };
+
+  const handleSaveAndLeave = async () => {
+    setShowLeaveDialog(false);
+    const ok = await savePost();
+    if (!ok) return;
+    skipGuardRef.current = true;
+    if (pendingNavigation?.type === 'back') {
+      window.history.go(sentinelRef.current ? -2 : -1);
+    } else if (pendingNavigation?.path) {
+      navigate(pendingNavigation.path);
+    } else {
+      navigate('/admin');
+    }
+  };
+
+  const handleDiscard = () => {
+    skipGuardRef.current = true;
+    setShowLeaveDialog(false);
+    if (pendingNavigation?.type === 'back') {
+      window.history.go(sentinelRef.current ? -2 : -1);
+    } else if (pendingNavigation?.path) {
+      navigate(pendingNavigation.path);
+    } else {
+      navigate('/admin');
+    }
+  };
+
   const buildFrontmatter = () => {
     const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
     let fm = '---\n';
@@ -91,42 +277,22 @@ export default function AdminEditor() {
   const getContentBody = () => parseFrontmatter(form.content).content;
 
   const handleSave = async () => {
-    if (!form.title.trim()) { toast.error('Title is required'); return; }
-    if (!form.content.trim()) { toast.error('Content is required'); return; }
-
-    setSaving(true);
-    const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
-    const contentBody = getContentBody();
-    const readingTime = calculateReadingTime(contentBody);
-
-    const payload = {
-      title: form.title,
-      slug: form.slug || generateSlug(form.title),
-      description: form.description,
-      category: form.category,
-      author: form.author,
-      tags,
-      content: form.content,
-      cover_image: form.cover_image,
-      status: form.status,
-      reading_time: readingTime,
-    };
-
-    if (form.status === 'published') payload.published_date = new Date().toISOString();
-
-    if (editId) {
-      await supabase.from('blog_posts').update(payload).eq('id', editId);
-    } else {
-      await supabase.from('blog_posts').insert(payload);
+    const ok = await savePost();
+    if (ok) {
+      skipGuardRef.current = true;
+      navigate('/admin');
     }
-
-    toast.success(editId ? 'Post updated!' : 'Post created!');
-    setSaving(false);
-    navigate('/admin');
   };
 
-  const previewContent = getContentBody();
-  const headings = extractHeadings(previewContent);
+  const [debouncedContent, setDebouncedContent] = useState(() => getContentBody());
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedContent(getContentBody()), 300);
+    return () => clearTimeout(timer);
+  }, [form.content]);
+
+  const previewContent = debouncedContent;
+  const headings = useMemo(() => extractHeadings(previewContent), [previewContent]);
 
   if (loading) {
     return (
@@ -160,7 +326,7 @@ export default function AdminEditor() {
   return (
     <div className="max-w-[85%] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-8">
-        <button onClick={() => navigate('/admin')} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => attemptLeave('/admin')} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
         </button>
         <div className="flex items-center gap-2">
@@ -226,19 +392,46 @@ export default function AdminEditor() {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <Label htmlFor="content">Content (Markdown)</Label>
-            <button
-              onClick={() => { if (!form.content.startsWith('---')) updateField('content', buildFrontmatter() + form.content); }}
-              className="text-xs text-primary hover:underline"
-            >
-              Insert frontmatter template
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => inlineFileRef.current?.click()}
+                disabled={inlineUploading}
+                className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                <ImagePlus className="w-3.5 h-3.5" />
+                {inlineUploading ? 'Uploading...' : 'Insert Image'}
+              </button>
+              <input
+                ref={inlineFileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { uploadInlineImage(e.target.files?.[0]); e.target.value = ''; }}
+              />
+              <button
+                onClick={() => { if (!form.content.startsWith('---')) updateField('content', buildFrontmatter() + form.content); }}
+                className="text-xs text-primary hover:underline"
+              >
+                Insert frontmatter template
+              </button>
+            </div>
           </div>
+          {inlineUploading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+              <div className="w-3.5 h-3.5 border-2 border-border border-t-primary rounded-full animate-spin" />
+              Uploading image...
+            </div>
+          )}
           <div className={splitView ? 'grid grid-cols-2 gap-4 items-start' : ''}>
             <Textarea
+              ref={contentRef}
               id="content"
               value={form.content}
               onChange={e => updateField('content', e.target.value)}
-              placeholder={`---\ntitle: "Your title"\n---\n\n# Your content here...`}
+              onDrop={handleContentDrop}
+              onDragOver={handleContentDragOver}
+              onPaste={handleContentPaste}
+              placeholder={`---\ntitle: "Your title"\n---\n\n# Your content here...\n\nDrop or paste images here to insert them inline.`}
               className={splitView
                 ? 'font-mono text-sm h-[calc(100vh-16rem)] resize-none overflow-y-auto'
                 : 'font-mono text-sm min-h-[400px] resize-y'}
@@ -251,6 +444,24 @@ export default function AdminEditor() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes that will be lost if you leave this page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button variant="destructive" onClick={handleDiscard}>Discard</Button>
+            <Button onClick={handleSaveAndLeave} disabled={saving}>
+              <Save className="w-4 h-4 mr-1.5" />{saving ? 'Saving...' : 'Save'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
