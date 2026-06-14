@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { track } from '@vercel/analytics';
 import { Search } from 'lucide-react';
 import BlogCard from '../components/BlogCard';
 import CategoryFilter from '../components/CategoryFilter';
@@ -43,6 +44,26 @@ export default function BlogList() {
     }
     return result;
   }, [posts, selectedCategory, search]);
+
+  // Track category filter changes
+  useEffect(() => {
+    if (selectedCategory) {
+      track('blog_category_filtered', {
+        category: selectedCategory,
+        results_count: filtered.length,
+      });
+    }
+  }, [selectedCategory, filtered.length]);
+
+  // Track search queries
+  useEffect(() => {
+    if (search.trim()) {
+      track('blog_search', {
+        query: search,
+        results_count: filtered.length,
+      });
+    }
+  }, [search, filtered.length]);
 
   return (
     <>

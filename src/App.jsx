@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { track } from '@vercel/analytics'
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import Layout from './components/Layout';
@@ -12,6 +14,20 @@ import BlogPost from './pages/BlogPost';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminEditor from './pages/AdminEditor';
+
+const RouteTracker = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    // Track page views for all routes
+    track('page_view', {
+      path: location.pathname,
+      timestamp: new Date().toISOString(),
+    });
+  }, [location.pathname]);
+
+  return null;
+};
 
 const AuthenticatedApp = () => {
   const { isLoading } = useAuth();
@@ -25,19 +41,22 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route element={<Layout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/blog" element={<BlogList />} />
-        <Route path="/blog/:slug" element={<BlogPost />} />
-        <Route element={<AdminGuard />}>
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/editor" element={<AdminEditor />} />
+    <>
+      <RouteTracker />
+      <Routes>
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/blog" element={<BlogList />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route element={<AdminGuard />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/editor" element={<AdminEditor />} />
+          </Route>
+          <Route path="*" element={<PageNotFound />} />
         </Route>
-        <Route path="*" element={<PageNotFound />} />
-      </Route>
-    </Routes>
+      </Routes>
+    </>
   );
 };
 
@@ -51,7 +70,7 @@ function App() {
         <Toaster richColors position="bottom-right" />
       </QueryClientProvider>
     </AuthProvider>
-  )
+  );
 }
 
-export default App
+export default App;

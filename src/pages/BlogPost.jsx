@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { track } from '@vercel/analytics';
 import { ArrowLeft, Clock, Calendar, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 import { parseFrontmatter, extractHeadings } from '../lib/markdown';
@@ -14,6 +15,8 @@ export default function BlogPost() {
   const { slug } = useParams();
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
+  const visitStartTimeRef = useRef(Date.now());
+  const maxScrollDepthRef = useRef(0);
 
   useEffect(() => {
     const load = async () => {
@@ -23,11 +26,58 @@ export default function BlogPost() {
         .eq('slug', slug)
         .eq('status', 'published')
         .single();
-      setPost(data || null);
+      
+      if (data) {
+        setPost(data);
+        // Track blog view with details
+        track('blog_viewed', {
+          slug: slug,
+          title: data.title,
+          category: data.category || 'uncategorized',
+          author: data.author,
+          reading_time: data.reading_time,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        setPost(null);
+      }
       setLoading(false);
     };
     load();
   }, [slug]);
+
+  // Track scroll depth
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPercentage = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+      if (scrollPercentage > maxScrollDepthRef.current) {
+        maxScrollDepthRef.current = scrollPercentage;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Track time spent and scroll depth when leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const timeSpentMs = Date.now() - visitStartTimeRef.current;
+      const timeSpentSeconds = Math.round(timeSpentMs / 1000);
+      
+      // Track blog engagement
+      track('blog_engagement', {
+        slug: slug,
+        time_spent_seconds: timeSpentSeconds,
+        scroll_depth_percent: Math.round(maxScrollDepthRef.current),
+        title: post?.title,
+        category: post?.category || 'uncategorized',
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [slug, post]);
 
   if (loading) {
     return (

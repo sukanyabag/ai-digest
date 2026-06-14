@@ -153,24 +153,33 @@ function Lightbox({ open, onClose, children, caption }) {
 function MermaidDiagram({ chart, isDark, onClick }) {
   const containerRef = useRef(null);
   const renderCount = useRef(0);
+  const diagramIdRef = useRef(`mermaid-${Math.random().toString(36).slice(2, 9)}-${Date.now()}`);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const current = ++renderCount.current;
-    const id = `mermaid-${Date.now()}-${current}`;
+    const id = `${diagramIdRef.current}-${current}`;
+
+    // Clear container before rendering
+    if (containerRef.current) {
+      containerRef.current.innerHTML = '';
+    }
 
     mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
 
     mermaid
       .render(id, chart)
       .then(({ svg }) => {
-        if (containerRef.current && renderCount.current === current)
+        if (containerRef.current && renderCount.current === current) {
+          containerRef.current.innerHTML = '';
           containerRef.current.innerHTML = svg;
+        }
       })
       .catch(() => {
-        if (containerRef.current && renderCount.current === current)
+        if (containerRef.current && renderCount.current === current) {
           containerRef.current.innerHTML =
             `<pre class="text-sm text-muted-foreground p-4 bg-secondary rounded-xl overflow-x-auto">${chart}</pre>`;
+        }
       });
   }, [chart, isDark]);
 
@@ -189,14 +198,26 @@ function MermaidDiagram({ chart, isDark, onClick }) {
 // ---------------------------------------------------------------------------
 function MermaidLightboxContent({ chart, isDark }) {
   const containerRef = useRef(null);
+  const diagramIdRef = useRef(`mermaid-lb-${Math.random().toString(36).slice(2, 9)}-${Date.now()}`);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const id = `mermaid-lb-${Date.now()}`;
+    
+    // Clear container before rendering
+    if (containerRef.current) {
+      containerRef.current.innerHTML = '';
+    }
+    
+    const id = diagramIdRef.current;
     mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
     mermaid
       .render(id, chart)
-      .then(({ svg }) => { if (containerRef.current) containerRef.current.innerHTML = svg; })
+      .then(({ svg }) => { 
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';
+          containerRef.current.innerHTML = svg;
+        }
+      })
       .catch(() => {
         if (containerRef.current)
           containerRef.current.innerHTML =

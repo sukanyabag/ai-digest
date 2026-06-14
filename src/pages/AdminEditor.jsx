@@ -324,7 +324,7 @@ export default function AdminEditor() {
   }
 
   return (
-    <div className="max-w-[85%] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-8">
         <button onClick={() => attemptLeave('/admin')} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
@@ -437,8 +437,14 @@ export default function AdminEditor() {
                 : 'font-mono text-sm min-h-[400px] resize-y'}
             />
             {splitView && (
-              <div className="h-[calc(100vh-16rem)] overflow-y-auto border border-border rounded-xl p-4 bg-background">
-                {previewContent ? <MarkdownRenderer content={previewContent} /> : <p className="text-muted-foreground text-sm">Start typing to see the preview...</p>}
+              <div className="h-[calc(100vh-16rem)] overflow-y-auto border border-border rounded-xl bg-background flex flex-col">
+                <div className="flex-1 overflow-y-auto">
+                  <div className="max-w-3xl mx-auto px-4 py-6">
+                    <h2 className="text-4xl font-bold mb-4">{form.title || 'Preview'}</h2>
+                    {form.description && <p className="text-lg text-muted-foreground mb-8">{form.description}</p>}
+                    {previewContent ? <MarkdownRenderer content={previewContent} /> : <p className="text-muted-foreground text-sm">Start typing to see the preview...</p>}
+                  </div>
+                </div>
               </div>
             )}
           </div>
