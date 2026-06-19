@@ -89,7 +89,7 @@ export default function AdminEditor() {
     setUploading(true);
     const ext = file.name.split('.').pop();
     const path = `covers/${Date.now()}.${ext}`;
-    const { data, error } = await supabase.storage.from('blog-images').upload(path, file, { upsert: true });
+    const { data, error } = await supabase.storage.from('blog-images').upload(path, file, { upsert: true, contentType: file.type });
     if (!error) {
       const { data: { publicUrl } } = supabase.storage.from('blog-images').getPublicUrl(data.path);
       setForm(prev => ({ ...prev, cover_image: publicUrl }));
@@ -100,9 +100,9 @@ export default function AdminEditor() {
   const uploadInlineImage = useCallback(async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     setInlineUploading(true);
-    const ext = file.name?.split('.').pop() || 'png';
+    const ext = file.name?.split('.').pop() || file.type?.split('/')[1] || 'jpg';
     const path = `content/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const { data, error } = await supabase.storage.from('blog-images').upload(path, file, { upsert: true });
+    const { data, error } = await supabase.storage.from('blog-images').upload(path, file, { upsert: true, contentType: file.type });
     if (error) {
       toast.error('Image upload failed');
       setInlineUploading(false);

@@ -123,12 +123,19 @@ function CommentForm({ postSlug, parentId = null, onSubmitted, onCancel }) {
     e.preventDefault();
     if (!name.trim() || !content.trim()) return;
     setBusy(true);
-    await supabase.from('post_comments').insert({
+    const { error } = await supabase.from('post_comments').insert({
       post_slug:   postSlug,
       parent_id:   parentId,
       author_name: name.trim(),
       content:     content.trim(),
     });
+    if (!error) {
+      fetch('/api/notify-comment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_slug: postSlug, parent_id: parentId, author_name: name.trim(), content: content.trim() }),
+      }).catch(() => {});
+    }
     setName('');
     setContent('');
     setBusy(false);
