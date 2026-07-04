@@ -10,6 +10,8 @@ export function setTheme(theme) {
   } else {
     document.documentElement.classList.remove('dark');
   }
+
+  window.dispatchEvent(new Event('theme-change'));
 }
 
 export function initTheme() {
